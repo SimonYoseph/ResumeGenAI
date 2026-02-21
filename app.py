@@ -25,7 +25,7 @@ load_dotenv()
 # ============================================
 # STEP 2: PAGE CONFIGURATION
 # ============================================
-st.set_page_config(page_title='GenAI Resume Scanner', page_icon=':file_folder:', layout='wide')
+st.set_page_config(page_title='ResumeGenAI', page_icon='🤖', layout='wide')
 PAGE_COLOR_THEMES = {
     "Default": {
         "main_bg": "#0E1117",
@@ -546,7 +546,7 @@ def extract_company_name(job_description_text):
 # ============================================
 # STEP 3: MAIN TITLE
 # ============================================
-st.title("GenAI Resume Scanner")
+st.title("ResumeGenAI")
 
 
 

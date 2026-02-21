@@ -1,6 +1,4 @@
-<<<<<<< Updated upstream
-=======
-# GenAI Resume Scanner
+# ResumeGenAI
 
 AI-powered ATS-style resume analysis app built with Streamlit.
 
@@ -113,5 +111,4 @@ Then add your token value in `.env` if your app version reads it from environmen
 ## License
 
 This project is for educational and portfolio use unless you add a specific license file.
->>>>>>> Stashed changes
 
