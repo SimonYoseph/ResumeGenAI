@@ -374,28 +374,8 @@ if selected_theme_name == "Light":
 
 
 # ============================================
-# STEP 3: SIDEBAR
+# STEP 3: HELPER FUNCTIONS (must come before sidebar)
 # ============================================
-with st.sidebar:
-    st.markdown("## ResumeGenAI Settings")
-    chosen_theme = st.selectbox(
-        "Theme",
-        list(PAGE_COLOR_THEMES.keys()),
-        index=list(PAGE_COLOR_THEMES.keys()).index(selected_theme_name),
-        key="theme_selector",
-    )
-    if chosen_theme != selected_theme_name:
-        st.session_state["page_color_theme"] = chosen_theme
-        st.rerun()
-    
-    hf_token = st.text_input("Hugging Face API Token", value=os.getenv("HF_TOKEN", ""), key="hf_token", type="password")
-    st.markdown("---")
-    st.markdown("**Instructions:**")
-    st.markdown("1. Upload your resume (PDF)")
-    st.markdown("2. Paste the job description")
-    st.markdown("3. System analyzes compatibility")
-    st.markdown("4. Get AI-powered suggestions")
-
 HISTORY_FILE = "run_history.json"
 
 
@@ -428,6 +408,95 @@ def add_history_entry(resume_text, job_description, scores, ai_result=None, edit
     }
     history_items.insert(0, entry)
     save_history(history_items)
+
+
+# ============================================
+def extract_job_info(job_description):
+    """Extract job title from job description"""
+    job_title = "Unknown"
+    
+    if not job_description:
+        return job_title
+    
+    lines = job_description.split('\n')
+    
+    # Get first meaningful line as job title
+    for line in lines:
+        line_strip = line.strip()
+        line_lower = line_strip.lower()
+        if line_strip and not any(keyword in line_lower for keyword in ('company', 'location', 'department', 'requisition', 'what makes us')):
+            job_title = line_strip
+            if len(job_title) > 40:
+                job_title = job_title[:40] + "..."
+            break
+    
+    return job_title
+
+
+# STEP 4: SIDEBAR
+# ============================================
+with st.sidebar:
+    st.markdown("### History")
+    history = load_history()
+    if history:
+        # Show top 4 recent
+        for i, item in enumerate(history[:4]):
+            # Extract job title from job description
+            job_desc = item.get('job_description', '')
+            job_title = extract_job_info(job_desc)
+            saved_at = item.get('saved_at', 'Unknown')
+            
+            # Get overall score
+            overall_score = "N/A"
+            if item.get("scores"):
+                overall_score = item.get("scores", {}).get("overall_score", "N/A")
+            
+            # Display job title
+            with st.expander(job_title):
+                st.write(f"**Date:** {saved_at}")
+                st.write(f"**Overall Score: {overall_score}/100**")
+        
+        # Show more if there are more than 4
+        if len(history) > 4:
+            with st.expander(f"View more analyses ({len(history) - 4} more)"):
+                for i, item in enumerate(history[4:]):
+                    # Extract job title from job description
+                    job_desc = item.get('job_description', '')
+                    job_title = extract_job_info(job_desc)
+                    saved_at = item.get('saved_at', 'Unknown')
+                    
+                    # Get overall score
+                    overall_score = "N/A"
+                    if item.get("scores"):
+                        overall_score = item.get("scores", {}).get("overall_score", "N/A")
+                    
+                    # Display job title
+                    with st.expander(job_title):
+                        st.write(f"**Date:** {saved_at}")
+                        st.write(f"**Overall Score: {overall_score}/100**")
+    else:
+        st.info("No analysis history yet.")
+    
+    st.markdown("---")
+    st.markdown("**Instructions:**")
+    st.markdown("1. Upload your resume (PDF)")
+    st.markdown("2. Paste the job description")
+    st.markdown("3. System analyzes compatibility")
+    st.markdown("4. Get AI-powered suggestions")
+    
+    st.markdown("---")
+    st.markdown("## ResumeGenAI Settings")
+    chosen_theme = st.selectbox(
+        "Theme",
+        list(PAGE_COLOR_THEMES.keys()),
+        index=list(PAGE_COLOR_THEMES.keys()).index(selected_theme_name),
+        key="theme_selector",
+    )
+    if chosen_theme != selected_theme_name:
+        st.session_state["page_color_theme"] = chosen_theme
+        st.rerun()
+    
+    hf_token = st.text_input("Hugging Face API Token", value=os.getenv("HF_TOKEN", ""), key="hf_token", type="password")
 
 
 def format_saved_at(saved_at_value):
