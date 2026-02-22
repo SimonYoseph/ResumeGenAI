@@ -20,12 +20,29 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.utils import simpleSplit
 from io import BytesIO
 
+# Load environment variables from .env file
 load_dotenv()
 
 # ============================================
 # STEP 2: PAGE CONFIGURATION
 # ============================================
-st.set_page_config(page_title='ResumeGenAI', page_icon='🤖', layout='wide')
+from PIL import Image
+try:
+    page_icon_img = Image.open("ResumeGenPic.png")
+except FileNotFoundError:
+    page_icon_img = "✨"
+
+st.set_page_config(page_title='ResumeGenAI', page_icon=page_icon_img, layout='wide')
+# ============================================
+# STEP 2: PAGE CONFIGURATION
+# ============================================
+from PIL import Image
+try:
+    page_icon_img = Image.open("ResumeGenPic.png")
+except FileNotFoundError:
+    page_icon_img = "✨"
+
+st.set_page_config(page_title='ResumeGenAI', page_icon=page_icon_img, layout='wide')
 PAGE_COLOR_THEMES = {
     "Default": {
         "main_bg": "#0E1117",
@@ -81,15 +98,12 @@ PAGE_COLOR_THEMES = {
 
 # Keep page theme persistent across refresh via URL query params.
 query_theme_name = st.query_params.get("theme")
-if query_theme_name in PAGE_COLOR_THEMES:
+if query_theme_name in PAGE_COLOR_THEMES and "page_color_theme" not in st.session_state:
     st.session_state["page_color_theme"] = query_theme_name
 
 selected_theme_name = st.session_state.get("page_color_theme", "Default")
 if selected_theme_name not in PAGE_COLOR_THEMES:
     selected_theme_name = "Default"
-st.session_state["page_color_theme"] = selected_theme_name
-if st.query_params.get("theme") != selected_theme_name:
-    st.query_params["theme"] = selected_theme_name
 
 
 def persist_page_theme_to_query_params():
@@ -358,6 +372,30 @@ if selected_theme_name == "Light":
         unsafe_allow_html=True,
     )
 
+
+# ============================================
+# STEP 3: SIDEBAR
+# ============================================
+with st.sidebar:
+    st.markdown("## ResumeGenAI Settings")
+    chosen_theme = st.selectbox(
+        "Theme",
+        list(PAGE_COLOR_THEMES.keys()),
+        index=list(PAGE_COLOR_THEMES.keys()).index(selected_theme_name),
+        key="theme_selector",
+    )
+    if chosen_theme != selected_theme_name:
+        st.session_state["page_color_theme"] = chosen_theme
+        st.rerun()
+    
+    hf_token = st.text_input("Hugging Face API Token", value=os.getenv("HF_TOKEN", ""), key="hf_token", type="password")
+    st.markdown("---")
+    st.markdown("**Instructions:**")
+    st.markdown("1. Upload your resume (PDF)")
+    st.markdown("2. Paste the job description")
+    st.markdown("3. System analyzes compatibility")
+    st.markdown("4. Get AI-powered suggestions")
+
 HISTORY_FILE = "run_history.json"
 
 
@@ -469,10 +507,6 @@ def resume_text_to_pdf_bytes(resume_text, fit_one_page=False):
 
 
 def render_pdf_preview(pdf_bytes, height=680):
-    if not pdf_bytes:
-        st.info("No PDF available to preview yet.")
-        return
-
     try:
         import pypdfium2 as pdfium
 
@@ -539,33 +573,33 @@ def extract_company_name(job_description_text):
     for line in lines:
         lower_line = line.lower()
         if any(marker in lower_line for marker in company_markers):
-            return line
+            try:
+                import pypdfium2 as pdfium
 
-    return "Unknown Company"
+                pdf_document = pdfium.PdfDocument(pdf_bytes)
+                total_pages = len(pdf_document)
+                if total_pages == 0:
+                    st.info("Unable to render PDF preview.")
+                    return
 
-# ============================================
-# STEP 3: MAIN TITLE
-# ============================================
-st.title("ResumeGenAI")
+                max_preview_pages = min(total_pages, 3)
+                preview_images = []
+                preview_captions = []
 
+                for page_index in range(max_preview_pages):
+                    page = pdf_document[page_index]
+                    bitmap = page.render(scale=1.4)
+                    preview_images.append(bitmap.to_pil())
+                    preview_captions.append(f"Page {page_index + 1}")
 
-
-
-# ============================================
-# STEP 4: SIDEBAR SETUP
-# ============================================
-with st.sidebar:
-    st.markdown('<div class="previous-scroll">', unsafe_allow_html=True)
-    st.markdown("### Previous")
-    history_items = load_history()
-    if not history_items:
-        st.caption("No previous runs yet.")
-    else:
-        recent_items = history_items[:3]
-        older_items = history_items[3:]
-
-        for idx, item in enumerate(recent_items):
-            saved_at = format_saved_at(item.get("saved_at", "Unknown"))
+                st.image(preview_images, caption=preview_captions, use_container_width=True)
+                if total_pages > max_preview_pages:
+                    st.caption(f"Showing first {max_preview_pages} of {total_pages} pages.")
+            except Exception:
+                st.info(
+                    "PDF preview is unavailable in this environment. "
+                    "Install `pypdfium2` to enable in-app preview, or use the download button below."
+                )
             score = item.get("scores", {}).get("overall_score", 0)
             company_name = extract_company_name(item.get("job_description", ""))
             job_title, keywords = summarize_job_description(item.get("job_description", ""))
@@ -1146,14 +1180,26 @@ with tab_original:
     with st.form("resume_job_form", clear_on_submit=False):
         left_col, right_col = st.columns(2)
         with left_col:
-            st.markdown("### Paste Original Resume")
-            draft_resume_text = st.text_area(
-                "Paste Original Resume",
-                height=360,
-                placeholder="Copy and paste the full resume text here...",
-                key="resume_text_input",
-                label_visibility="collapsed",
+            st.markdown("### Upload Resume (PDF)")
+            uploaded_resume_file = st.file_uploader(
+                "Upload PDF Resume",
+                type=["pdf"],
+                key="resume_file_upload",
             )
+            draft_resume_text = ""
+            if uploaded_resume_file:
+                extracted_text = extract_resume_text(uploaded_resume_file)
+                if extracted_text:
+                    st.success("Resume text extracted successfully!")
+                    draft_resume_text = extracted_text
+                    st.text_area(
+                        "Extracted Resume Text (editable)",
+                        value=extracted_text,
+                        height=360,
+                        key="resume_text_input_extracted",
+                    )
+                else:
+                    st.error("Failed to extract text from uploaded file.")
         with right_col:
             st.markdown("### Paste Job Description")
             draft_job_description = st.text_area(
@@ -1201,33 +1247,82 @@ with tab_original:
     st.metric("Compatibility", f"{compatibility_score}%")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    if resume_text_clean:
-        extracted_text = resume_text_clean
-        parsed_sections = parse_sections(extracted_text)
-        scores = compute_scores(parsed_sections, job_description_clean)
+    # --- Edited Resume Output (in same tab, auto-generated) ---
+    has_resume = bool(resume_text_clean)
+    has_job_desc = bool(job_description_clean)
+    if has_resume and has_job_desc:
+        source_signature = hashlib.sha256(
+            f"{resume_text_clean}\n---\n{job_description_clean}".encode("utf-8")
+        ).hexdigest()
+        last_generated_signature = st.session_state.get("edited_resume_source_signature")
+        last_attempted_signature = st.session_state.get("edited_resume_attempted_signature")
+        needs_auto_generation = (
+            source_signature != last_generated_signature
+            and source_signature != last_attempted_signature
+        )
+        if needs_auto_generation:
+            st.session_state["edited_resume_attempted_signature"] = source_signature
+            with st.spinner("Creating an edited resume version tailored to the job description..."):
+                edited_result = generate_edited_resume(resume_text_clean, job_description_clean, st.session_state.get("hf_token", ""))
+            if "error" in edited_result:
+                st.error(f"Edited resume generation failed: {edited_result['error']}")
+            else:
+                st.session_state["edited_resume_text"] = edited_result["edited_resume"]
+                st.session_state["edited_resume_source_signature"] = source_signature
+                history_scores = compute_scores(parse_sections(resume_text_clean), job_description_clean)
+                add_history_entry(
+                    resume_text=resume_text,
+                    job_description=job_description,
+                    scores=history_scores,
+                    ai_result=st.session_state.get("ai_result"),
+                    edited_resume=edited_result.get("edited_resume"),
+                )
+        if "edited_resume_text" in st.session_state:
+            st.markdown("### Edited Resume Output")
+            st.text_area(
+                "Edited Resume (auto-generated)",
+                value=st.session_state["edited_resume_text"],
+                height=360,
+                key="edited_resume_text_area",
+            )
+            edited_pdf_bytes = resume_text_to_pdf_bytes(
+                st.session_state["edited_resume_text"],
+                fit_one_page=True,
+            )
+            st.download_button(
+                label="Download Edited Resume (.pdf)",
+                data=edited_pdf_bytes,
+                file_name="edited_resume.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="download_edited_resume_main_tab",
+            )
 
-        st.subheader("Scoring Engine")
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.metric("Skills Match", f"{scores['skills_score']}%")
-        with c2:
-            st.metric("Experience Relevance", f"{scores['experience_score']}%")
-        with c3:
-            st.metric("Education", f"{scores['education_score']}%")
-        with c4:
-            st.metric("Overall Fit", f"{scores['overall_score']}%")
+            # Use history_scores for metrics
+            history_scores = compute_scores(parse_sections(resume_text_clean), job_description_clean)
+            st.subheader("Scoring Engine")
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.metric("Skills Match", f"{history_scores['skills_score']}%")
+            with c2:
+                st.metric("Experience Relevance", f"{history_scores['experience_score']}%")
+            with c3:
+                st.metric("Education", f"{history_scores['education_score']}%")
+            with c4:
+                st.metric("Overall Fit", f"{history_scores['overall_score']}%")
 
-        with st.expander("Skills matched"):
-            st.write(scores["skills_matched"] if scores["skills_matched"] else "None")
-        with st.expander("Skills missing (from job description)"):
-            st.write(scores["skills_missing"] if scores["skills_missing"] else "None")
+            with st.expander("Skills matched"):
+                st.write(history_scores["skills_matched"] if history_scores["skills_matched"] else "None")
+            with st.expander("Skills missing (from job description)"):
+                st.write(history_scores["skills_missing"] if history_scores["skills_missing"] else "None")
 
         has_job_desc = bool(job_description_clean)
         if not has_job_desc:
             st.warning("Enter a job description to see match and skill gap.")
         else:
             st.subheader("Match & skill gap")
-            overall = scores["overall_score"]
+            history_scores = compute_scores(parse_sections(resume_text_clean), job_description_clean)
+            overall = history_scores["overall_score"]
             if overall >= 70:
                 gauge_color = "#22c55e"
             elif overall >= 40:
@@ -1265,8 +1360,8 @@ with tab_original:
             )
             st.plotly_chart(fig_gauge, use_container_width=True)
 
-            matched = (scores["skills_matched"] or [])[:15]
-            missing = (scores["skills_missing"] or [])[:15]
+            matched = (history_scores["skills_matched"] or [])[:15]
+            missing = (history_scores["skills_missing"] or [])[:15]
             if matched or missing:
                 rows = []
                 for s in matched:
@@ -1301,9 +1396,9 @@ with tab_original:
 
             sub_names = ["Skills", "Experience", "Education"]
             sub_values = [
-                scores["skills_score"],
-                scores["experience_score"],
-                scores["education_score"],
+                history_scores["skills_score"],
+                history_scores["experience_score"],
+                history_scores["education_score"],
             ]
             fig_sub = go.Figure(
                 go.Bar(
@@ -1331,7 +1426,7 @@ with tab_original:
         else:
             if st.button("Run AI Analysis", type="primary", use_container_width=True):
                 with st.spinner(f"Analyzing with {AI_MODEL}... this may take a moment."):
-                    ai_result = analyze_with_ai(extracted_text, job_description, hf_token)
+                    ai_result = analyze_with_ai(extracted_text, job_description, st.session_state.get("hf_token", ""))
 
                 if "error" in ai_result:
                     st.error(f"AI analysis failed: {ai_result['error']}")
@@ -1344,7 +1439,7 @@ with tab_original:
                 add_history_entry(
                     resume_text=resume_text,
                     job_description=job_description,
-                    scores=scores,
+                    scores=history_scores,
                     ai_result=ai_result,
                     edited_resume=st.session_state.get("edited_resume_text"),
                 )
@@ -1413,7 +1508,7 @@ with tab_edited:
         if needs_auto_generation:
             st.session_state["edited_resume_attempted_signature"] = source_signature
             with st.spinner("Creating an edited resume version tailored to the job description..."):
-                edited_result = generate_edited_resume(resume_text_clean, job_description_clean, hf_token)
+                edited_result = generate_edited_resume(resume_text_clean, job_description_clean, st.session_state.get("hf_token", ""))
 
             if "error" in edited_result:
                 st.error(f"Edited resume generation failed: {edited_result['error']}")
@@ -1449,6 +1544,7 @@ with tab_edited:
                 file_name="edited_resume.pdf",
                 mime="application/pdf",
                 use_container_width=True,
+                key="download_edited_resume_edited_tab",
             )
 
 

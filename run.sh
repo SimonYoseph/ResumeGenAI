@@ -20,3 +20,4 @@ fi
 
 echo "[run] Starting Streamlit app..."
 exec streamlit run app.py
+streamlit run yourscript.py
