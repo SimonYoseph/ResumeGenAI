@@ -227,6 +227,15 @@ div[data-baseweb="input"]:focus-within {
     border: 1px solid __TEXTBOX_FOCUS__;
     box-shadow: 0 0 0 1px __TEXTBOX_FOCUS__;
 }
+
+[data-testid="stMainBlockContainer"] {
+    padding-top: 3.5rem !important;
+    padding-bottom: 2rem !important;
+}
+
+div[data-testid="stHeader"] {
+    background-color: transparent !important;
+}
 </style>
 """
 theme_css = (
@@ -1215,14 +1224,35 @@ with tab_original:
         <script>
         const parentWindow = window.parent;
         const doc = parentWindow.document;
-        const listenerVersion = 2;
+        const listenerVersion = 5;
 
         if (parentWindow.__doubleEnterSubmitVersion !== listenerVersion) {
             if (parentWindow.__doubleEnterSubmitHandler) {
                 doc.removeEventListener("keydown", parentWindow.__doubleEnterSubmitHandler, true);
             }
+            if (parentWindow.__clickScrollHandler) {
+                doc.removeEventListener("click", parentWindow.__clickScrollHandler, true);
+            }
 
             parentWindow.__lastEnterPressedAt = 0;
+
+            const executeImmediateScroll = () => {
+                const targetEl = doc.getElementById("compatibility-section");
+                if (targetEl) {
+                    try { targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch(e){}
+                } else {
+                    const scroller = doc.querySelector('[data-testid="stAppViewMain"]') || parentWindow;
+                    if (scroller.scrollBy) scroller.scrollBy({ top: 700, behavior: 'smooth' });
+                }
+            };
+
+            parentWindow.__clickScrollHandler = function(event) {
+                const btn = event.target.closest('button');
+                if (btn && btn.innerText && btn.innerText.includes("Enter")) {
+                    executeImmediateScroll();
+                }
+            };
+            doc.addEventListener("click", parentWindow.__clickScrollHandler, true);
 
             parentWindow.__doubleEnterSubmitHandler = function (event) {
                 if (event.key !== "Enter") return;
@@ -1236,6 +1266,7 @@ with tab_original:
 
                 if (now - prev <= 1000) {
                     event.preventDefault();
+                    executeImmediateScroll();
 
                     const formEl = activeEl.closest("form");
                     if (formEl && typeof formEl.requestSubmit === "function") {
@@ -1289,7 +1320,7 @@ with tab_original:
             st.markdown("### Resume Text (Editable)")
             draft_resume_text = st.text_area(
                 "Extracted or Pasted Resume Text (Editable)",
-                height=250,
+                height=150,
                 key="resume_text_input_extracted",
                 label_visibility="collapsed",
             )
@@ -1297,7 +1328,7 @@ with tab_original:
             st.markdown("### Paste Job Description")
             draft_job_description = st.text_area(
                 "Paste Job Description",
-                height=250,
+                height=150,
                 placeholder="Copy and paste the job description here...",
                 key="job_description_input",
                 label_visibility="collapsed",
@@ -1341,96 +1372,6 @@ with tab_original:
     st.metric("Compatibility", f"{compatibility_score}%")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    if st.session_state.pop("scroll_to_results", False):
-        components.html(
-            """
-            <script>
-                const parentWindow = window.parent;
-                const doc = parentWindow.document;
-                let attempts = 0;
-                
-                const scrollInterval = setInterval(() => {
-                    const resultsEl = doc.getElementById("compatibility-section");
-                    
-                    if (resultsEl) {
-                        resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        clearInterval(scrollInterval);
-                        
-                        // Show Bubble Popup
-                        const existingBubble = doc.getElementById('ai-hint-bubble');
-                        if (existingBubble) existingBubble.remove();
-                        
-                        const bubble = doc.createElement('div');
-                        bubble.id = 'ai-hint-bubble';
-                        bubble.innerText = 'Run AI-Powered Analysis Below';
-                        bubble.style.position = 'fixed';
-                        bubble.style.bottom = '40px';
-                        
-                        // Centering via display flex on the iframe body container wrapper workaround
-                        bubble.style.left = '60%';
-                        bubble.style.transform = 'translate(-50%, 0)';
-                        
-                        bubble.style.width = 'max-content';
-                        bubble.style.backgroundColor = 'rgba(0, 0, 0, 0.75)';
-                        bubble.style.color = 'white';
-                        bubble.style.padding = '14px 24px';
-                        bubble.style.borderRadius = '30px';
-                        bubble.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-                        bubble.style.zIndex = '999999';
-                        bubble.style.fontSize = '16px';
-                        bubble.style.fontWeight = '500';
-                        bubble.style.opacity = '0';
-                        bubble.style.transition = 'opacity 0.6s ease-in-out';
-                        bubble.style.pointerEvents = 'none';
-                        bubble.style.backdropFilter = 'blur(4px)';
-                        bubble.style.fontFamily = 'system-ui, -apple-system, sans-serif';
-                        bubble.style.textAlign = 'center';
-                        
-                        doc.body.appendChild(bubble);
-                        
-                        setTimeout(() => {
-                            bubble.style.opacity = '1';
-                        }, 600);
-                        
-                        setTimeout(() => {
-                            bubble.style.opacity = '0';
-                            setTimeout(() => bubble.remove(), 600);
-                        }, 6000); // Also guarantee removal after 6 seconds as a hard fallback
-                        
-                        // Remove bubble when user scrolls down
-                        const handleScroll = (e) => {
-                            bubble.style.opacity = '0';
-                            doc.removeEventListener('scroll', handleScroll, true);
-                            parentWindow.removeEventListener('scroll', handleScroll, true);
-                            
-                            // Check alternative scroll container
-                            const mainContainer = doc.querySelector('.stMainBlockContainer');
-                            if (mainContainer) mainContainer.removeEventListener('scroll', handleScroll, true);
-                            
-                            setTimeout(() => bubble.remove(), 600);
-                        };
-                        
-                        // Attach the listener after entry animation finishes
-                        // Streamlit puts scrolling into specific deeply-nested divs rather than the window
-                        setTimeout(() => {
-                            doc.addEventListener('scroll', handleScroll, { capture: true, once: true });
-                            parentWindow.addEventListener('scroll', handleScroll, { capture: true, once: true });
-                            
-                            const mainContainer = doc.querySelector('.stMainBlockContainer');
-                            if (mainContainer) mainContainer.addEventListener('scroll', handleScroll, { capture: true, once: true });
-                        }, 1200);
-                    }
-                    
-                    attempts++;
-                    if (attempts > 15) {
-                        clearInterval(scrollInterval); // Stop trying after 1.5 seconds
-                    }
-                }, 100);
-            </script>
-            """,
-            height=0,
-            width=0,
-        )
 
     # --- Edited Resume Output (in same tab, auto-generated) ---
     has_resume = bool(resume_text_clean)
@@ -1604,6 +1545,87 @@ with tab_original:
             st.plotly_chart(fig_sub, use_container_width=True)
 
         st.write("---")
+        if st.session_state.pop("scroll_to_results", False):
+            components.html(
+                """
+                <script>
+                    const parentWindow = window.parent;
+                    const doc = parentWindow.document;
+
+                    setTimeout(() => {
+                        const targetEl = doc.getElementById("compatibility-section");
+                        if (targetEl) {
+                            try { targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch(e){}
+                        } else {
+                            const scroller = doc.querySelector('[data-testid="stAppViewMain"]') || parentWindow;
+                            if (scroller.scrollBy) scroller.scrollBy({ top: 700, behavior: 'smooth' });
+                        }
+                    }, 500);
+
+                    // Show Bubble Popup
+                            const existingBubble = doc.getElementById('ai-hint-bubble');
+                            if (existingBubble) existingBubble.remove();
+                            
+                            const bubble = doc.createElement('div');
+                            bubble.id = 'ai-hint-bubble';
+                            bubble.innerText = 'Run AI-Powered Analysis Below';
+                            bubble.style.position = 'fixed';
+                            bubble.style.bottom = '40px';
+                            
+                            // Centering via display flex on the iframe body container wrapper workaround
+                            bubble.style.left = '60%';
+                            bubble.style.transform = 'translate(-50%, 0)';
+                            
+                            bubble.style.width = 'max-content';
+                            bubble.style.backgroundColor = 'rgba(0, 0, 0, 0.75)';
+                            bubble.style.color = 'white';
+                            bubble.style.padding = '14px 24px';
+                            bubble.style.borderRadius = '30px';
+                            bubble.style.border = '2px solid red';
+                            bubble.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                            bubble.style.zIndex = '999999';
+                            bubble.style.fontSize = '16px';
+                            bubble.style.fontWeight = '500';
+                            bubble.style.opacity = '0';
+                            bubble.style.transition = 'opacity 0.6s ease-in-out';
+                            bubble.style.pointerEvents = 'none';
+                            bubble.style.backdropFilter = 'blur(4px)';
+                            bubble.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+                            bubble.style.textAlign = 'center';
+                            
+                            doc.body.appendChild(bubble);
+                            
+                            setTimeout(() => {
+                                bubble.style.opacity = '1';
+                            }, 600);
+                            
+                            // Remove bubble when user scrolls down
+                            const handleScroll = (e) => {
+                                bubble.style.opacity = '0';
+                                doc.removeEventListener('scroll', handleScroll, true);
+                                parentWindow.removeEventListener('scroll', handleScroll, true);
+                                
+                                // Check alternative scroll container
+                                const mainContainer = doc.querySelector('.stMainBlockContainer');
+                                if (mainContainer) mainContainer.removeEventListener('scroll', handleScroll, true);
+                                
+                                setTimeout(() => bubble.remove(), 600);
+                            };
+                            
+                            // Attach the listener after entry animation finishes
+                            // Streamlit puts scrolling into specific deeply-nested divs rather than the window
+                            setTimeout(() => {
+                                doc.addEventListener('scroll', handleScroll, { capture: true, once: true });
+                                parentWindow.addEventListener('scroll', handleScroll, { capture: true, once: true });
+                                
+                                const mainContainer = doc.querySelector('.stMainBlockContainer');
+                                if (mainContainer) mainContainer.addEventListener('scroll', handleScroll, { capture: true, once: true });
+                            }, 1200);
+                </script>
+                """,
+                height=0,
+                width=0,
+            )
         st.subheader("AI-Powered Analysis")
 
         if not has_job_desc:
