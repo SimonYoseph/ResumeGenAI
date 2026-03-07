@@ -510,11 +510,15 @@ with st.sidebar:
         st.rerun()
     
     import os
-    default_hf_token = os.getenv("HF_TOKEN", "")
-    try:
-        default_hf_token = st.secrets.get("HF_TOKEN", default_hf_token)
-    except Exception:
-        pass
+    # Try fetching from environment first, then explicitly try Streamlit secrets, then fallback to empty string
+    default_hf_token = os.environ.get("HF_TOKEN", "")
+    if not default_hf_token:
+        try:
+            if "HF_TOKEN" in st.secrets:
+                default_hf_token = st.secrets["HF_TOKEN"]
+        except Exception:
+            pass
+    
     st.session_state["hf_token"] = default_hf_token
 
 
