@@ -995,6 +995,9 @@ The JSON must have exactly these keys:
 
 Remember: Return ONLY the JSON object. Start your response with {{ and end with }}"""
 
+    if not token:
+        return {"error": "No Hugging Face token found. Please set HF_TOKEN in your .env file or Streamlit secrets for it to be automatically loaded in the background."}
+
     try:
         client = InferenceClient(token=token if token else None)
         response = client.chat_completion(
@@ -1168,6 +1171,9 @@ Return ONLY the edited resume text in plain text format.
 ---JOB DESCRIPTION---
 {job_description[:3000]}
 """
+
+    if not token:
+        return {"error": "No Hugging Face token found. Please set HF_TOKEN in your .env file or Streamlit secrets for it to be automatically loaded in the background."}
 
     try:
         client = InferenceClient(token=token if token else None)
