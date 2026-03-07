@@ -433,6 +433,17 @@ def extract_job_info(job_description):
     return job_title
 
 
+
+def load_historical_entry_to_state(item):
+    st.session_state["submitted_resume_text"] = item.get("resume_text", "")
+    st.session_state["submitted_job_description"] = item.get("job_description", "")
+    st.session_state["resume_text_input_extracted"] = item.get("resume_text", "")
+    st.session_state["job_description_input"] = item.get("job_description", "")
+    st.session_state["ai_result"] = item.get("ai_result")
+    st.session_state["edited_resume_text"] = item.get("edited_resume")
+    st.session_state["edited_resume_source_signature"] = None
+    st.session_state["edited_resume_attempted_signature"] = None
+
 # STEP 4: SIDEBAR
 # ============================================
 with st.sidebar:
@@ -455,6 +466,7 @@ with st.sidebar:
             with st.expander(job_title):
                 st.write(f"**Date:** {saved_at}")
                 st.write(f"**Overall Score: {overall_score}/100**")
+                st.button("Load this analysis", key=f"load_top_history_{i}", on_click=load_historical_entry_to_state, args=(item,))
         
         # Show more if there are more than 4
         if len(history) > 4:
@@ -474,6 +486,7 @@ with st.sidebar:
                     with st.expander(job_title):
                         st.write(f"**Date:** {saved_at}")
                         st.write(f"**Overall Score: {overall_score}/100**")
+                        st.button("Load this analysis", key=f"load_more_history_{i}", on_click=load_historical_entry_to_state, args=(item,))
     else:
         st.info("No analysis history yet.")
     
@@ -496,7 +509,13 @@ with st.sidebar:
         st.session_state["page_color_theme"] = chosen_theme
         st.rerun()
     
-    hf_token = st.text_input("Hugging Face API Token", value=os.getenv("HF_TOKEN", ""), key="hf_token", type="password")
+    import os
+    default_hf_token = os.getenv("HF_TOKEN", "")
+    try:
+        default_hf_token = st.secrets.get("HF_TOKEN", default_hf_token)
+    except Exception:
+        pass
+    st.session_state["hf_token"] = default_hf_token
 
 
 def format_saved_at(saved_at_value):
@@ -739,14 +758,6 @@ def extract_company_name(job_description_text):
             on_change=persist_page_theme_to_query_params,
         )
         st.markdown('<div class="settings-divider"></div>', unsafe_allow_html=True)
-        default_hf_token = os.getenv("HF_TOKEN", "")
-        try:
-            default_hf_token = st.secrets.get("HF_TOKEN", default_hf_token)
-        except Exception:
-            pass
-        hf_token = st.text_input("Hugging Face API Token", type="password",
-                                 value=default_hf_token,
-                                 help="Get a free token at https://huggingface.co/settings/tokens")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -956,11 +967,10 @@ def compute_scores(parsed_sections, job_description):
 # --------------------------------------------------
 # AI Analysis via Hugging Face Inference API
 # --------------------------------------------------
-AI_MODEL = "mistralai/Mistral-7B-Instruct-v0.2"
+
+AI_MODEL = "Qwen/Qwen2.5-72B-Instruct"
 
 def analyze_with_ai(resume_text, job_description, token):
-    if not token:
-        return {"error": "Please enter your Hugging Face API token in the sidebar."}
 
     prompt = f"""You are an expert ATS resume analyst.
 
@@ -986,7 +996,7 @@ The JSON must have exactly these keys:
 Remember: Return ONLY the JSON object. Start your response with {{ and end with }}"""
 
     try:
-        client = InferenceClient(token=token)
+        client = InferenceClient(token=token if token else None)
         response = client.chat_completion(
             model=AI_MODEL,
             messages=[{"role": "user", "content": prompt}],
@@ -1130,8 +1140,6 @@ def convert_resume_to_rich_markdown(resume_text):
 
 
 def generate_edited_resume(resume_text, job_description, token):
-    if not token:
-        return {"error": "Please enter your Hugging Face API token in the sidebar."}
 
     prompt = f"""You are an expert resume writer and ATS optimization specialist.
 
@@ -1162,7 +1170,7 @@ Return ONLY the edited resume text in plain text format.
 """
 
     try:
-        client = InferenceClient(token=token)
+        client = InferenceClient(token=token if token else None)
         response = client.chat_completion(
             model=AI_MODEL,
             messages=[{"role": "user", "content": prompt}],
@@ -1246,34 +1254,40 @@ with tab_original:
         height=0,
     )
 
+    st.markdown("### Upload Resume (PDF)")
+    uploaded_resume_file = st.file_uploader(
+        "Upload PDF Resume",
+        type=["pdf"],
+        key="resume_file_upload",
+        label_visibility="collapsed"
+    )
+    
+    if uploaded_resume_file and st.session_state.get("last_uploaded_file") != uploaded_resume_file.name:
+        extracted_text = extract_resume_text(uploaded_resume_file)
+        if extracted_text:
+            st.session_state["resume_text_input_extracted"] = extracted_text
+            st.session_state["last_uploaded_file"] = uploaded_resume_file.name
+        else:
+            st.error("Failed to extract text from uploaded file.")
+            
+    if uploaded_resume_file and "last_uploaded_file" in st.session_state:
+        st.success("Using uploaded file content.")
+
     with st.form("resume_job_form", clear_on_submit=False):
         left_col, right_col = st.columns(2)
         with left_col:
-            st.markdown("### Upload Resume (PDF)")
-            uploaded_resume_file = st.file_uploader(
-                "Upload PDF Resume",
-                type=["pdf"],
-                key="resume_file_upload",
+            st.markdown("### Resume Text (Editable)")
+            draft_resume_text = st.text_area(
+                "Extracted or Pasted Resume Text (Editable)",
+                height=250,
+                key="resume_text_input_extracted",
+                label_visibility="collapsed",
             )
-            draft_resume_text = ""
-            if uploaded_resume_file:
-                extracted_text = extract_resume_text(uploaded_resume_file)
-                if extracted_text:
-                    st.success("Resume text extracted successfully!")
-                    draft_resume_text = extracted_text
-                    st.text_area(
-                        "Extracted Resume Text (editable)",
-                        value=extracted_text,
-                        height=360,
-                        key="resume_text_input_extracted",
-                    )
-                else:
-                    st.error("Failed to extract text from uploaded file.")
         with right_col:
             st.markdown("### Paste Job Description")
             draft_job_description = st.text_area(
                 "Paste Job Description",
-                height=360,
+                height=250,
                 placeholder="Copy and paste the job description here...",
                 key="job_description_input",
                 label_visibility="collapsed",
@@ -1296,6 +1310,7 @@ with tab_original:
                 ai_result=st.session_state.get("ai_result"),
                 edited_resume=st.session_state.get("edited_resume_text"),
             )
+            st.session_state["scroll_to_results"] = True
             st.rerun()
 
     resume_text = st.session_state.get("submitted_resume_text", "")
@@ -1310,11 +1325,36 @@ with tab_original:
     if resume_text_clean:
         preview_sections = parse_sections(resume_text_clean)
         compatibility_score = compute_scores(preview_sections, job_description_clean)["overall_score"]
-
-    st.markdown('<div class="compatibility-block">', unsafe_allow_html=True)
+        
+    st.markdown('<div id="compatibility-section" class="compatibility-block" style="scroll-margin-top: 80px;">', unsafe_allow_html=True)
     st.subheader("Compatibility with Job Description")
     st.metric("Compatibility", f"{compatibility_score}%")
     st.markdown("</div>", unsafe_allow_html=True)
+
+    if st.session_state.pop("scroll_to_results", False):
+        components.html(
+            """
+            <script>
+                let attempts = 0;
+                const scrollInterval = setInterval(() => {
+                    const parentWindow = window.parent;
+                    const resultsEl = parentWindow.document.getElementById("compatibility-section");
+                    
+                    if (resultsEl) {
+                        resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        clearInterval(scrollInterval);
+                    }
+                    
+                    attempts++;
+                    if (attempts > 15) {
+                        clearInterval(scrollInterval); // Stop trying after 1.5 seconds
+                    }
+                }, 100);
+            </script>
+            """,
+            height=0,
+            width=0,
+        )
 
     # --- Edited Resume Output (in same tab, auto-generated) ---
     has_resume = bool(resume_text_clean)
@@ -1494,8 +1534,8 @@ with tab_original:
             st.warning("Enter a job description to enable AI analysis.")
         else:
             if st.button("Run AI Analysis", type="primary", use_container_width=True):
-                with st.spinner(f"Analyzing with {AI_MODEL}... this may take a moment."):
-                    ai_result = analyze_with_ai(extracted_text, job_description, st.session_state.get("hf_token", ""))
+                with st.spinner("Analyzing... this may take a moment."):
+                    ai_result = analyze_with_ai(resume_text, job_description, st.session_state.get("hf_token", ""))
 
                 if "error" in ai_result:
                     st.error(f"AI analysis failed: {ai_result['error']}")
@@ -1513,7 +1553,7 @@ with tab_original:
                     edited_resume=st.session_state.get("edited_resume_text"),
                 )
 
-            if "ai_result" in st.session_state:
+            if "ai_result" in st.session_state and st.session_state["ai_result"] is not None:
                 ai = st.session_state["ai_result"]
 
                 fit = ai.get("fit_rating", "?")
