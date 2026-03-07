@@ -1341,14 +1341,80 @@ with tab_original:
         components.html(
             """
             <script>
+                const parentWindow = window.parent;
+                const doc = parentWindow.document;
                 let attempts = 0;
+                
                 const scrollInterval = setInterval(() => {
-                    const parentWindow = window.parent;
-                    const resultsEl = parentWindow.document.getElementById("compatibility-section");
+                    const resultsEl = doc.getElementById("compatibility-section");
                     
                     if (resultsEl) {
                         resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
                         clearInterval(scrollInterval);
+                        
+                        // Show Bubble Popup
+                        const existingBubble = doc.getElementById('ai-hint-bubble');
+                        if (existingBubble) existingBubble.remove();
+                        
+                        const bubble = doc.createElement('div');
+                        bubble.id = 'ai-hint-bubble';
+                        bubble.innerText = 'Run AI-Powered Analysis Below';
+                        bubble.style.position = 'fixed';
+                        bubble.style.bottom = '40px';
+                        
+                        // Centering via display flex on the iframe body container wrapper workaround
+                        bubble.style.left = '60%';
+                        bubble.style.transform = 'translate(-50%, 0)';
+                        
+                        bubble.style.width = 'max-content';
+                        bubble.style.backgroundColor = 'rgba(0, 0, 0, 0.75)';
+                        bubble.style.color = 'white';
+                        bubble.style.padding = '14px 24px';
+                        bubble.style.borderRadius = '30px';
+                        bubble.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+                        bubble.style.zIndex = '999999';
+                        bubble.style.fontSize = '16px';
+                        bubble.style.fontWeight = '500';
+                        bubble.style.opacity = '0';
+                        bubble.style.transition = 'opacity 0.6s ease-in-out';
+                        bubble.style.pointerEvents = 'none';
+                        bubble.style.backdropFilter = 'blur(4px)';
+                        bubble.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+                        bubble.style.textAlign = 'center';
+                        
+                        doc.body.appendChild(bubble);
+                        
+                        setTimeout(() => {
+                            bubble.style.opacity = '1';
+                        }, 600);
+                        
+                        setTimeout(() => {
+                            bubble.style.opacity = '0';
+                            setTimeout(() => bubble.remove(), 600);
+                        }, 6000); // Also guarantee removal after 6 seconds as a hard fallback
+                        
+                        // Remove bubble when user scrolls down
+                        const handleScroll = (e) => {
+                            bubble.style.opacity = '0';
+                            doc.removeEventListener('scroll', handleScroll, true);
+                            parentWindow.removeEventListener('scroll', handleScroll, true);
+                            
+                            // Check alternative scroll container
+                            const mainContainer = doc.querySelector('.stMainBlockContainer');
+                            if (mainContainer) mainContainer.removeEventListener('scroll', handleScroll, true);
+                            
+                            setTimeout(() => bubble.remove(), 600);
+                        };
+                        
+                        // Attach the listener after entry animation finishes
+                        // Streamlit puts scrolling into specific deeply-nested divs rather than the window
+                        setTimeout(() => {
+                            doc.addEventListener('scroll', handleScroll, { capture: true, once: true });
+                            parentWindow.addEventListener('scroll', handleScroll, { capture: true, once: true });
+                            
+                            const mainContainer = doc.querySelector('.stMainBlockContainer');
+                            if (mainContainer) mainContainer.addEventListener('scroll', handleScroll, { capture: true, once: true });
+                        }, 1200);
                     }
                     
                     attempts++;
